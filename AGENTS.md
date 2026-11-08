@@ -16,7 +16,7 @@ Rakadee เว็บประมูลสินค้าออนไลน์ (�
 
 1. `docs/decision-log.md` ข้อตัดสินใจที่ใช้แทน requirement เดิม
 2. `docs/erd/schema.sql` ชื่อตาราง คอลัมน์ และชนิดข้อมูล **ห้ามเดาชื่อเอง**
-3. `docs/api-spec/openapi.yaml` path, request, response, error code **ห้ามเดาเอง**
+3. `docs/api-spec/api-spec.md` path, request, response, error code **ห้ามเดาเอง**
 4. เอกสาร requirement (ผู้ใช้จะแนบข้อที่เกี่ยวข้องมาให้)
 
 ถ้าสิ่งที่ต้องใช้ยังไม่มีในข้อ 2–3 ห้ามคิดขึ้นเองแล้วทำต่อ ให้หยุดและบอกผู้ใช้ว่าต้องให้ SA เพิ่มอะไร
@@ -33,9 +33,8 @@ backend/
     middlewares/  errorHandler.js, upload.js, auth.js (SA)
     jobs/         หนึ่งไฟล์ต่อหนึ่ง job: module.exports = { name, run }
     socket/       index.js: emitToListing(), emitToUser()
-    utils/        response.js (ok, created, asyncHandler), AppError.js
-  migrations/     SQL ตาม ERD (SA)
-  seeds/          ข้อมูลตั้งต้น
+    utils/        response.js (ok, created, asyncHandler), AppError.js, password.js (scrypt)
+  seeds/          ข้อมูลตั้งต้น (บัญชีทดสอบ หมวดหมู่ ตั้งค่าระบบ)
   storage/        ไฟล์อัปโหลด (ไม่ขึ้น git)
 frontend/
   index.html
@@ -44,11 +43,13 @@ frontend/
   js/api.js       เรียก API ผ่าน api.get/post/put/patch/del/upload เท่านั้น
   js/layout.js    navbar ตาม role
   js/<page>.js    สคริปต์ของแต่ละหน้า
-docs/             decision-log.md, erd/, api-spec/
+  scripts/        db-init.js (npm run db:init)
+docs/             decision-log.md, erd/schema.sql, api-spec/api-spec.md, qa/
 ```
 
 ## กติกาการเขียนโค้ด Back-end
 
+- **รูปแบบ API, สิทธิ์ และ error ร่วม:** ทำตามหัวข้อ 0 ของ `docs/api-spec/api-spec.md`
 - **Response:** ใช้ `ok(res, data)` / `created(res, data)` จาก `utils/response.js` เท่านั้น
 - **Error:** `throw new AppError(status, 'UPPER_SNAKE_CODE', 'ข้อความภาษาไทยสำหรับผู้ใช้')` แล้วให้ errorHandler จัดการ ห้าม `res.status(...).json(...)` เอง
 - **Route handler:** ห่อด้วย `asyncHandler` ทุกตัว
@@ -89,7 +90,7 @@ docs/             decision-log.md, erd/, api-spec/
 | `wallet.create(userId)` | SA | สร้าง Wallet 10,000 บาท |
 | `order.create(listingId, buyerId, price)` | Programmer | สร้าง Order, Payment, snapshot ที่อยู่ |
 | `escrow.hold(orderId)` / `release(orderId)` / `refund(orderId)` | SA | พักเงิน / ปล่อยเงินหักค่าธรรมเนียม / คืนเงิน |
-| `penalty.add(userId, type)` | QA | บันทึกความผิดและเปลี่ยนสถานะบัญชี |
+| `penalty.add(userId, type, { orderId, note })` | QA | บันทึกความผิดและเปลี่ยนสถานะบัญชี |
 | `dispute.isOpen(orderId)` | QA | มีข้อพิพาทเปิดอยู่หรือไม่ |
 | `notify(userId, event, data)` | PM | แจ้งเตือนในเว็บ อีเมล และ Socket |
 | `audit.log(adminId, action, targetType, targetId, ip)` | PM | บันทึก Audit Log |
