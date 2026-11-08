@@ -11,6 +11,7 @@ cd backend
 npm install
 cp .env.example .env      # Windows: copy .env.example .env
 # แก้ค่า DB_* ใน .env ให้ตรงกับ MySQL ในเครื่อง
+npm run db:init           # สร้างตารางทั้งหมด + ข้อมูลทดสอบ (ลบข้อมูลเดิม)
 npm run dev
 ```
 
@@ -19,7 +20,9 @@ npm run dev
 - `npm run dev` รีสตาร์ตเองเมื่อแก้ไฟล์ (ใช้ตอนพัฒนา)
 - `npm start` รันปกติ
 
-> ตอนนี้ยังไม่มีตาราง ถ้า Database ขึ้นว่า unavailable ให้เช็กว่า MySQL เปิดอยู่และสร้าง database ชื่อ `rakadee` แล้ว (`CREATE DATABASE rakadee;`) ตารางจะมาพร้อม ERD ของ SA
+บัญชีทดสอบจาก seed: `superadmin` / `Super@1234`, `admin` / `Admin@1234`, `seller1` `buyer1` `buyer2` / `Test@1234` (สมาชิกมี Wallet 10,000 บาท)
+
+ถ้า Database ขึ้นว่า unavailable ให้เช็กว่า MySQL เปิดอยู่ และค่า `DB_*` ใน `.env` ถูกต้อง
 
 ## ใช้ AI เขียนโค้ด
 
@@ -29,19 +32,19 @@ npm run dev
 
 1. `AGENTS.md`
 2. `docs/decision-log.md`
-3. `docs/erd/schema.sql` และ `docs/api-spec/openapi.yaml`
+3. `docs/erd/schema.sql` และ `docs/api-spec/api-spec.md`
 4. ข้อในเอกสาร requirement ที่เกี่ยวกับงานนั้น
 
 ตัวอย่างคำสั่ง:
 
-> อ่าน AGENTS.md, docs/decision-log.md, docs/erd/schema.sql และ docs/api-spec/openapi.yaml ก่อน แล้วทำ API ลงสินค้า (POST /api/listings) ตาม requirement ข้อ 3.1–3.3 ที่แนบมา ทำเฉพาะโมดูลลงสินค้า ห้ามแก้ไฟล์โมดูลอื่น เสร็จแล้วบอกวิธีทดสอบทีละขั้น
+> อ่าน AGENTS.md, docs/decision-log.md, docs/erd/schema.sql และ docs/api-spec/api-spec.md ก่อน แล้วทำ API ลงสินค้า (POST /api/listings) ตาม requirement ข้อ 3.1–3.3 ที่แนบมา ทำเฉพาะโมดูลลงสินค้า ห้ามแก้ไฟล์โมดูลอื่น เสร็จแล้วบอกวิธีทดสอบทีละขั้น
 
 ## โครงสร้าง
 
 ```
 backend/    Express API, Socket.IO, Scheduler (node-cron)
 frontend/   HTML / CSS / JS (เสิร์ฟจาก backend ที่ port เดียวกัน)
-docs/       Decision Log, ERD, API Spec
+docs/       Decision Log, ERD (schema.sql), API Spec, เอกสาร QA
 ```
 
 รายละเอียดโฟลเดอร์และกติกาการเขียนโค้ดอยู่ใน `AGENTS.md`
@@ -60,7 +63,3 @@ docs/       Decision Log, ERD, API Spec
 | SA | Auth, Wallet, Payment, Escrow, ERD, API Spec |
 | QA | ลงสินค้า, อนุมัติสินค้า, Dispute, บทลงโทษ, จัดการผู้ใช้, Test Plan |
 | Programmer | Auction Engine, หน้าแรก, ค้นหา, รายละเอียดสินค้า, Watchlist |
-
-
-
-
