@@ -13,6 +13,11 @@ const config = {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'rakadee',
   },
+  security: {
+    idCardEncKey: process.env.ID_CARD_ENC_KEY || '',
+    idCardHashKey: process.env.ID_CARD_HASH_KEY || '',
+    sessionTtlHours: Number(process.env.SESSION_TTL_HOURS) || 168,
+  },
   upload: {
     dir: path.join(__dirname, '..', '..', 'storage'),
     maxFileSizeMb: Number(process.env.UPLOAD_MAX_MB) || 5,
