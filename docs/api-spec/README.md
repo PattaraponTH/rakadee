@@ -1,16 +1,5 @@
 # API Spec (เจ้าของ: SA)
 
-SA วางไฟล์ในโฟลเดอร์นี้:
-
-- `openapi.yaml` รายการ API ทั้งระบบในรูปแบบ OpenAPI 3 **ไฟล์หลักที่ AI และทุกคนอ้างอิง**
-- (ถ้าใช้) Postman collection export เป็น `rakadee.postman_collection.json`
-
-กติกา:
-
-- ทุก path ขึ้นต้นด้วย `/api` ชื่อ resource เป็นพหูพจน์ `kebab-case` เช่น `/api/listings/{id}/bids`
-- body และ response ใช้ `camelCase`
-- response สำเร็จ: `{ "success": true, "data": ... }`
-- response ผิดพลาด: `{ "success": false, "error": { "code": "BID_TOO_LOW", "message": "..." } }`
-- error code ใช้ `UPPER_SNAKE_CASE` และต้องระบุไว้ใน spec ของแต่ละ endpoint
-- ระบุ role ที่เรียกได้ทุก endpoint: guest, bidder, seller, admin, super_admin
-- หัวข้อโมดูล (tag): auth, users, wallet, payments, listings, bids, orders, shipments, disputes, notifications, admin
+- **`api-spec.md`** รายการ API ทั้งระบบ (path, สิทธิ์, request, response, error code, Socket.IO events) **ไฟล์หลักที่ AI และทุกคนอ้างอิง**
+- ข้อตกลงรูปแบบ response, error, pagination และสิทธิ์อยู่ในหัวข้อ 0 ของ `api-spec.md` (สรุปจาก D-11, D-12 ใน `docs/decision-log.md`)
+- เพิ่มหรือแก้ endpoint ต้องแก้ `api-spec.md` ก่อนหรือพร้อมกับโค้ดใน PR เดียวกัน และแจ้งเจ้าของโมดูลที่เรียกใช้
