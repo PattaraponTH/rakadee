@@ -290,7 +290,7 @@ Middleware (SA): `requireAuth` → `requireRole(...)` → `requireActiveAccount(
 ```
 
 - `minNextBid` = `startPrice` ถ้ายังไม่มีบิด ไม่งั้น `currentPrice + bidIncrement`
-- `buyNowAvailable` = มี `buyNowPrice` และสถานะ active
+- `buyNowAvailable` = สถานะ active และมี `buyNowPrice` และ (ยังไม่มีบิด หรือ `currentPrice < buyNowPrice`) (D-15)
 - `me` เป็น `null` สำหรับ Guest; เจ้าของสินค้าได้ `reservePrice` เพิ่ม
 - สินค้า draft/pending/rejected/cancelled ของคนอื่นตอบ `NOT_FOUND`
 
@@ -308,26 +308,25 @@ Middleware (SA): `requireAuth` → `requireRole(...)` → `requireActiveAccount(
 | --- | --- | --- | --- | --- |
 | 6.1 | POST | `/api/listings/:id/bids` | member (`bid`) | บิดเอง |
 | 6.2 | GET | `/api/listings/:id/proxy` | member | ดู Proxy ของฉัน |
-| 6.3 | PUT | `/api/listings/:id/proxy` | member (`bid`) | ตั้ง/แก้วงเงิน Proxy |
-| 6.4 | DELETE | `/api/listings/:id/proxy` | member | ยกเลิก Proxy |
+| 6.3 | PUT | `/api/listings/:id/proxy` | member (`bid`) | ตั้ง / เพิ่มวงเงิน Proxy (ลดหรือยกเลิกไม่ได้ D-13) |
 | 6.5 | POST | `/api/listings/:id/buy-now` | member (`bid`) | ซื้อทันที |
 | 6.6 | GET | `/api/me/bids` | member | การประมูลของฉัน |
 | 6.7 | GET | `/api/me/won` | member | รายการที่ชนะ |
 
 **6.1 POST `/api/listings/:id/bids`** `{ "amount": 1600.00 }`
 
-- ใน transaction: `SELECT ... FOR UPDATE` listing → ตรวจข้อ 4.1-2 (active, `now < end_at`, ไม่ใช่เจ้าของ, สถานะบัญชี, `amount ≥ minNextBid`) → INSERT bids → ประมวล Proxy ของคนอื่น (ข้อ 4.2) → Auto Extend ถ้าเหลือ ≤ 2 นาทีและยังไม่ครบ 10 ครั้ง (`end_at = เวลาบิด + 2 นาที`) → commit → Socket `bid:new` (+ `auction:extended`) → `notify(ผู้ถูกแซง, OUTBID)`
+- อัลกอริทึมเต็ม (กฎ 1–10, pseudocode, ตัวอย่างตัวเลข) อยู่ใน `docs/auction/proxy-bid-algorithm.pdf` ใช้ฟังก์ชันเดียว `placeBid(listingId, userId, amount, mode)` ทั้ง 6.1 (`manual`) และ 6.3 (`proxy`)
+- ใน transaction: `SELECT ... FOR UPDATE` listing → ตรวจข้อ 4.1-2 (active, `now < end_at`, ไม่ใช่เจ้าของ, ไม่ใช่แอดมิน, สถานะบัญชี, `amount ≥ minNextBid`) → INSERT bids → ประมวล Proxy ของผู้นำ (ข้อ 4.2) → ดันราคาถึง Reserve ถ้าเข้าเงื่อนไข (D-14) → Auto Extend ถ้าเหลือ ≤ 2 นาทีและยังไม่ครบ 10 ครั้ง (`end_at = เวลาบิด + 2 นาที`, D-16) → commit → Socket `bid:new`, `bid:leader` (+ `auction:extended`) → `notify(ผู้ถูกแซง, OUTBID)`
 - ไม่เช็กยอด Wallet (D-06)
 - 201 → `{ listingId, currentPrice, minNextBid, bidCount, isLeading, endAt, extended: true, extendCount, serverTime }` (`isLeading` อาจเป็น false ถ้า Proxy ของคนอื่นบิดทับทันที)
 - Errors: `BID_TOO_LOW` (400, `details: { minNextBid }`), `AUCTION_NOT_ACTIVE` (409), `AUCTION_ENDED` (409), `SELF_BIDDING` (403), `ALREADY_LEADING` (409 เป็นผู้นำอยู่แล้ว)
 
 **6.2** → `{ maxAmount, isActive, isLeading }` หรือ `null`
 
-**6.3 PUT** `{ "maxAmount": 3000.00 }` ตั้งครั้งแรกหรือเพิ่มวงเงินแล้วระบบบิดแทนทันทีถ้าจำเป็น → `{ maxAmount, isActive, isLeading, currentPrice, minNextBid }` · Errors: `PROXY_TOO_LOW` (400 ต้อง ≥ `minNextBid`), `PROXY_CANNOT_DECREASE` (400 ลดวงเงินต่ำกว่าราคาที่ตัวเองนำอยู่ไม่ได้), `AUCTION_NOT_ACTIVE`, `SELF_BIDDING`
+**6.3 PUT** `{ "maxAmount": 3000.00 }` ตั้งครั้งแรกหรือเพิ่มวงเงิน ระบบบิดแทนทันทีถ้าจำเป็น → `{ maxAmount, isActive, isLeading, currentPrice, minNextBid, extended, endAt }` · Errors: `PROXY_TOO_LOW` (400 ต้อง ≥ `minNextBid`, `details: { minNextBid }`), `PROXY_CANNOT_DECREASE` (400 วงเงินใหม่ต้องมากกว่าเดิม D-13), `AUCTION_NOT_ACTIVE`, `AUCTION_ENDED`, `SELF_BIDDING`
+- ผู้นำเพิ่มวงเงิน: ราคาไม่ขยับ (ยกเว้นดันถึง Reserve ตาม D-14) และไม่ต่อเวลา (D-16)
 
-**6.4** → `{ isActive: false }` (บิดที่เกิดขึ้นแล้วไม่ถูกยกเลิก)
-
-**6.5 POST `/api/listings/:id/buy-now`** `{ "confirm": true }`
+**6.5 POST `/api/listings/:id/buy-now`** `{ "confirm": true }` ใช้ได้เมื่อ `buyNowAvailable` เป็นจริง (D-15)
 
 - ใน transaction: ตรวจ active + มี `buyNowPrice` + ไม่ใช่เจ้าของ + สถานะบัญชี → INSERT bids (`buy_now`) → listing `ended`, `result = buy_now`, `winner_id` → `order.create(listingId, buyerId, buyNowPrice)` → Socket `auction:closed` → แจ้งเตือนผู้ซื้อ ผู้ขาย และผู้บิดคนอื่น
 - 201 → `{ listingId, orderId, price, paymentDueAt }`
