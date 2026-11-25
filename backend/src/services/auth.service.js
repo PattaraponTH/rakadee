@@ -111,9 +111,7 @@ async function getTerms() {
 async function register(data, ipAddress = '127.0.0.1', userAgent = '') {
   const {
     email,
-    username,
     password,
-    fullName,
     phone,
     idCardNumber,
     acceptTerms,
@@ -121,6 +119,9 @@ async function register(data, ipAddress = '127.0.0.1', userAgent = '') {
     termsVersion = '1.0',
     privacyVersion = '1.0',
   } = data;
+  // username เก็บเป็นตัวพิมพ์เล็กเสมอ (spec: a-z 0-9 _) · ชื่อจริง trim ก่อนตรวจ (ห้ามว่างหรือมีแต่ช่องว่าง)
+  const username = typeof data.username === 'string' ? data.username.trim().toLowerCase() : '';
+  const fullName = typeof data.fullName === 'string' ? data.fullName.trim().replace(/\s+/g, ' ') : '';
 
   // 1. Validation 
   if (!acceptTerms || !acceptPrivacy) {
@@ -131,8 +132,12 @@ async function register(data, ipAddress = '127.0.0.1', userAgent = '') {
     throw new AppError(400, 'VALIDATION_ERROR', 'รูปแบบอีเมลไม่ถูกต้อง', { field: 'email' });
   }
 
-  if (!username || !/^[a-zA-Z0-9_]{4,30}$/.test(username)) {
+  if (!/^[a-z0-9_]{4,30}$/.test(username)) {
     throw new AppError(400, 'VALIDATION_ERROR', 'ชื่อผู้ใช้ต้องมีความยาว 4-30 ตัวอักษร (a-z, 0-9, _)', { field: 'username' });
+  }
+
+  if (fullName.length < 2 || fullName.length > 150) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'กรุณากรอกชื่อ-นามสกุลจริง (2–150 ตัวอักษร)', { field: 'fullName' });
   }
 
   if (!isStrongPassword(password)) {
@@ -144,7 +149,7 @@ async function register(data, ipAddress = '127.0.0.1', userAgent = '') {
   }
 
   if (!validateThaiIdCard(idCardNumber)) {
-    throw new AppError(400, 'INVALID_ID_CARD', 'เลขประจำตัวประชาชนไม่ถูกต้องตามหลักเกณฑ์');
+    throw new AppError(400, 'INVALID_ID_CARD', 'เลขประจำตัวประชาชนไม่ถูกต้อง กรุณาตรวจสอบว่ากรอกเลข 13 หลักตรงตามบัตรจริง');
   }
 
   const idCardHash = hashIdCard(idCardNumber);

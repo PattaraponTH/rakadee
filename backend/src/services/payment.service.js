@@ -211,21 +211,12 @@ async function updateShippingAddress(orderId, buyerId, addressId) {
  * @param {number} buyerId
  */
 async function payWithWallet(orderId, buyerId, file, body = {}) {
-  // บังคับแนบสลิปตั้งแต่ตอนชำระ (ตรวจก่อนหักเงิน) ชำระและบันทึกสลิปใน transaction เดียวกัน
-  if (!file) {
-    throw new AppError(400, 'SLIP_REQUIRED', 'กรุณาแนบรูปสลิปการโอนเงิน', { slip: 'กรุณาเลือกไฟล์สลิป (.jpg หรือ .png)' });
-  }
-  let slip;
+  // สลิปไม่บังคับ (D-01) ถ้าแนบมาจะบันทึกใน transaction เดียวกับการหักเงิน
   try {
-    slip = readSlipFields(body);
+    const slip = file ? readSlipFields(body) : { slipReference: null, slipAmount: null, slipTransferredAt: null };
+    return await payInTransaction(orderId, buyerId, file ? `slips/${file.filename}` : null, slip);
   } catch (err) {
-    removeUploaded(file);
-    throw err;
-  }
-  try {
-    return await payInTransaction(orderId, buyerId, `slips/${file.filename}`, slip);
-  } catch (err) {
-    removeUploaded(file);
+    if (file) removeUploaded(file);
     throw err;
   }
 }
@@ -315,8 +306,8 @@ async function payInTransaction(orderId, buyerId, slipPath, slip) {
     const [payResult] = await conn.query(
       `INSERT INTO payments (order_id, payer_id, amount, method, status,
                              slip_file_path, slip_amount, slip_transferred_at, slip_reference, slip_uploaded_at)
-       VALUES (?, ?, ?, 'mock_wallet', 'pending_review', ?, ?, ?, ?, UTC_TIMESTAMP())`,
-      [order.id, buyerId, amountDecimal, slipPath, slip.slipAmount, slip.slipTransferredAt, slip.slipReference]
+       VALUES (?, ?, ?, 'mock_wallet', 'pending_review', ?, ?, ?, ?, IF(? IS NULL, NULL, UTC_TIMESTAMP()))`,
+      [order.id, buyerId, amountDecimal, slipPath, slip.slipAmount, slip.slipTransferredAt, slip.slipReference, slipPath]
     );
 
     const paymentId = Number(payResult.insertId);
@@ -331,7 +322,7 @@ async function payInTransaction(orderId, buyerId, slipPath, slip) {
 }
 
 /**
- * 7.7 แนบสลิปจำลอง (ไม่บังคับ)
+ * 7.7 แนบหรือเปลี่ยนสลิประหว่างรอตรวจ (ไม่บังคับ แต่ถ้าเรียกต้องมีไฟล์)
  * @param {number} paymentId
  * @param {number} buyerId
  * @param {object} file
@@ -718,6 +709,8 @@ async function rejectPayment(paymentId, adminId, reason, ipAddress = '127.0.0.1'
       orderId: order.id,
       buyerId: order.buyer_id,
       amount: Number(refundDecimal),
+      canRepay: order.status === 'pending_payment', // ยังชำระใหม่ได้ (Order ยังไม่ถูกยกเลิก)
+      payDueAt: order.status === 'pending_payment' ? newPaymentDueAt.toISOString() : null,
     };
 
     return {
@@ -733,6 +726,9 @@ async function rejectPayment(paymentId, adminId, reason, ipAddress = '127.0.0.1'
       orderId: orderInfo.orderId,
       amount: orderInfo.amount,
       reason: cleanReason,
+      paymentRejected: true, // ข้อความบอกว่าสลิปถูกปฏิเสธ + เหตุผล + ให้ชำระใหม่ (notificationTemplates REFUNDED)
+      canRepay: orderInfo.canRepay,
+      payDueAt: orderInfo.payDueAt,
     }).catch(() => {});
 
     const audit = require('./audit');

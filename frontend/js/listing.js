@@ -15,6 +15,7 @@
   // ---------- สถานะของหน้า (เงินเป็นสตางค์ เวลาเป็น ms) ----------
   let item = null;
   let viewer = null;
+  let user = null; // ผู้ใช้ที่ login (ใช้คำนวณ viewer ใหม่ตอนโหลดข้อมูลซ้ำ)
   let closed = false;
   const el = {};
 
@@ -130,12 +131,14 @@
       wrap.append(
         h('div', { class: 'au-actions-disabled' },
           h('div', { class: 'form-group' },
-            h('label', { for: 'bid-amount', text: `ราคาที่เสนอ (ขั้นต่ำ ${A.formatMoney(minNext())})` }),
-            h('input', { id: 'bid-amount', disabled: true, value: bahtInput(minNext()) })),
+            el.guestLabel = h('label', { for: 'bid-amount' }),
+            el.guestInput = h('input', { id: 'bid-amount', disabled: true })),
           h('div', { class: 'au-bid-actions' },
             h('button', { type: 'button', class: 'btn btn-primary', disabled: true, text: 'บิดทันที' }),
             h('button', { type: 'button', class: 'btn', disabled: true, text: 'ตั้ง Proxy Bid' })),
-          item.buyNowPrice != null && h('button', { type: 'button', class: 'btn au-buynow', disabled: true, text: `ซื้อทันที ${A.formatMoney(item.buyNowPrice)}` })),
+          el.guestBuy = item.buyNowPrice != null
+            ? h('button', { type: 'button', class: 'btn au-buynow', disabled: true, text: `ซื้อทันที ${A.formatMoney(item.buyNowPrice)}` })
+            : null),
         h('div', { class: 'au-lock' },
           h('span', null, 'เข้าสู่ระบบเพื่อประมูล — คุณยังไม่สามารถบิดหรือซื้อทันทีได้ '),
           h('a', { href: '/pages/login.html', text: 'เข้าสู่ระบบ' })),
@@ -273,17 +276,24 @@
       el.hint.textContent = viewer.isLeader ? 'คุณเป็นผู้นำอยู่แล้ว เพิ่มวงเงินได้ด้วย Proxy Bid' : `ราคาต้องไม่ต่ำกว่า ${A.formatMoney(minNext())}`;
     }
     if (el.buyBtn) el.buyBtn.hidden = !A.isBuyNowAvailable(item); // D-15
+    // QA RT-4: ฟอร์มของ Guest (กดไม่ได้) แสดงขั้นต่ำล่าสุด และซ่อนซื้อทันทีตาม D-15 เหมือนผู้ซื้อ
+    if (el.guestLabel) {
+      el.guestLabel.textContent = `ราคาที่เสนอ (ขั้นต่ำ ${A.formatMoney(minNext())})`;
+      el.guestInput.value = bahtInput(minNext());
+    }
+    if (el.guestBuy) el.guestBuy.hidden = !A.isBuyNowAvailable(item);
   }
 
   function paintCountdown() {
-    const remaining = item.endAt - A.clock.now();
+    // QA RT-3: ปิดแล้ว (หมดเวลา / ซื้อทันที / ผลจาก server) countdown หยุดที่ 00 ไม่นับต่อจาก end_at เดิม
+    const remaining = item.status === 'active' ? item.endAt - A.clock.now() : 0;
     const t = A.splitRemaining(remaining);
     const two = (n) => String(n).padStart(2, '0');
     el.cdD.textContent = two(t.days);
     el.cdH.textContent = two(t.hours);
     el.cdM.textContent = two(t.minutes);
     el.cdS.textContent = two(t.seconds);
-    if (remaining <= 0 && !closed) markClosed('หมดเวลาประมูลแล้ว กำลังสรุปผล');
+    if (remaining <= 0 && !closed && item.status === 'active') markClosed('หมดเวลาประมูลแล้ว กำลังสรุปผล');
   }
 
   function markClosed(message) {
@@ -317,8 +327,9 @@
     });
     if (!check.ok) { setMessage('error', check.error); el.input.focus(); return; }
     // D-17: ราคาสูงผิดปกติ (>= 2 เท่าของราคาปัจจุบัน) ต้องกดยืนยันก่อนส่ง
-    if (A.needsBidConfirm({ amountSatang: check.satang, currentPrice: item.currentPrice, startPrice: item.startPrice })
-      && !(await confirmBigBid(mode, check.satang))) {
+    // Proxy ยืนยันทุกครั้ง: วงเงินผูกพันและลดหรือยกเลิกไม่ได้ (ข้อ 2.1, D-13) กันกดตั้งด้วยราคาขั้นต่ำที่เติมไว้โดยไม่ตั้งใจ
+    const big = A.needsBidConfirm({ amountSatang: check.satang, currentPrice: item.currentPrice, startPrice: item.startPrice });
+    if ((big || mode === 'proxy') && !(await confirmBigBid(mode, check.satang))) {
       el.input.focus();
       return;
     }
@@ -408,11 +419,14 @@
   function applyBidNew(p) {
     if (!sameListing(p)) return;
     if (p.serverTime != null) A.clock.sync(p.serverTime);
+    // QA RT-2: ถ้าจำนวนบิดกระโดดเกิน 1 (พลาด event ไป) โหลดประวัติใหม่แทนการเติมแถวเดียว
+    const missed = Number.isInteger(p.bidCount) && Number.isInteger(item.bidCount) && p.bidCount > item.bidCount + 1;
     item.currentPrice = A.moneyToSatang(p.currentPrice);
     item.minNextBid = A.moneyToSatang(p.minNextBid);
     if (Number.isInteger(p.bidCount)) item.bidCount = p.bidCount;
     if (Number.isFinite(A.toMs(p.endAt))) item.endAt = A.toMs(p.endAt);
-    if (el.historyBody && p.amount != null) {
+    if (missed) loadHistory();
+    else if (el.historyBody && p.amount != null) {
       el.historyBody.querySelectorAll('td[colspan]').forEach((td) => td.parentElement.remove());
       el.historyBody.prepend(historyRow({ bidder: p.bidder, bidType: p.bidType, amount: p.amount, createdAt: p.serverTime }));
     }
@@ -439,7 +453,12 @@
 
   function applyClosed(p) {
     if (!sameListing(p)) return;
+    // QA RT-3: ราคาใหญ่เป็นราคาปิด (finalPrice) และหยุด countdown
     item.status = 'ended';
+    item.result = p.result;
+    if (p.finalPrice != null) item.currentPrice = A.moneyToSatang(p.finalPrice);
+    paintAll();
+    paintCountdown();
     markClosed(closedText(p.result, A.moneyToSatang(p.finalPrice)));
     loadHistory();
   }
@@ -448,14 +467,38 @@
     const socket = window.getSocket ? await window.getSocket() : null; // จาก layout.js (ส่ง token ให้อัตโนมัติ)
     if (!socket) return;
     const join = () => socket.emit('listing:join', listingId);
+    let joinedBefore = socket.connected;
     if (socket.connected) join();
-    socket.on('connect', join); // ต่อใหม่หลังหลุดต้อง join อีกครั้ง
+    // ต่อใหม่หลังหลุดต้อง join อีกครั้ง และ (QA RT-1) โหลดข้อมูลสินค้า (5.2) กับประวัติใหม่
+    // เพราะระหว่างหลุดอาจพลาด bid:new / auction:extended / auction:closed ไป
+    socket.on('connect', () => {
+      join();
+      if (joinedBefore) refresh();
+      joinedBefore = true;
+    });
     socket.on('server:time', onServerTime);
     socket.on('bid:new', applyBidNew);
     socket.on('bid:leader', applyLeader);
     socket.on('auction:extended', applyExtended);
     socket.on('auction:closed', applyClosed);
     window.addEventListener('pagehide', () => socket.emit('listing:leave', listingId));
+  }
+
+  // โหลดข้อมูลสินค้าใหม่ทั้งหน้า (หลังต่อ Socket ใหม่) เวลา ราคา ต่อเวลา และสถานะปิดมาจาก server
+  async function refresh() {
+    try {
+      const d = await api.get(`/listings/${encodeURIComponent(listingId)}`);
+      A.clock.sync(d.serverTime);
+      item = normalizeDetail(d);
+    } catch (e) {
+      if (el.msg) setMessage('error', e.message);
+      return;
+    }
+    viewer = getViewer(user);
+    closed = false; // ถ้าเคยขึ้นปิดเพราะเวลาเก่า แต่จริงถูกต่อเวลา ต้องเปิดปุ่มคืน
+    build();
+    loadHistory();
+    paintCountdown();
   }
 
   async function init() {
@@ -465,7 +508,7 @@
       root.replaceChildren(h('div', { class: 'alert alert-error', role: 'alert', text: 'ไม่พบรหัสสินค้า' }));
       return;
     }
-    const user = await A.whenUserReady(); // ต้องรู้ token ก่อน API จะตอบ me
+    user = await A.whenUserReady(); // ต้องรู้ token ก่อน API จะตอบ me
     try {
       const d = await api.get(`/listings/${encodeURIComponent(listingId)}`);
       A.clock.sync(d.serverTime);
@@ -482,6 +525,6 @@
     connectSocket();
   }
 
-  window.ListingPage = { applyBidNew, applyLeader, applyExtended, applyClosed, onServerTime }; // ไว้เทสในเบราว์เซอร์
+  window.ListingPage = { applyBidNew, applyLeader, applyExtended, applyClosed, onServerTime, refresh }; // ไว้เทสในเบราว์เซอร์
   init();
 })();

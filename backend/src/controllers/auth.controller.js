@@ -1,4 +1,5 @@
 // Auth Controller — ข้อ 1 ใน docs/api-spec/api-spec.md
+const parseId = require('../utils/parseId');
 const { ok, created } = require('../utils/response');
 const authService = require('../services/auth.service');
 const userService = require('../services/user.service');
@@ -96,7 +97,7 @@ async function getSessions(req, res) {
 
 // 1.14 DELETE /api/auth/sessions/:id
 async function revokeSession(req, res) {
-  const sessionIdToRevoke = Number(req.params.id);
+  const sessionIdToRevoke = parseId(req.params.id, 'id');
   const data = await authService.revokeSession(req.user.id, sessionIdToRevoke);
   ok(res, data);
 }

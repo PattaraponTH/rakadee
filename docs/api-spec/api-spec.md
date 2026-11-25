@@ -373,7 +373,7 @@ Middleware (SA): `requireAuth` → `requireRole(...)` → `requireActiveAccount(
 | 7.4 | GET | `/api/orders/:id/payment` | ผู้ซื้อของ Order | ข้อมูลหน้าชำระเงิน |
 | 7.5 | PUT | `/api/orders/:id/shipping-address` | ผู้ซื้อของ Order | เปลี่ยนที่อยู่จัดส่ง (ก่อนชำระเท่านั้น) |
 | 7.6 | POST | `/api/orders/:id/pay` | ผู้ซื้อของ Order (`pay`) | ชำระด้วย Mock Wallet |
-| 7.7 | POST | `/api/payments/:id/slip` | ผู้ซื้อ | เปลี่ยนสลิประหว่างรอตรวจ |
+| 7.7 | POST | `/api/payments/:id/slip` | ผู้ซื้อ | แนบหรือเปลี่ยนสลิประหว่างรอตรวจ |
 | 7.7b | GET | `/api/payments/:id/slip` | ผู้จ่าย, admin | ไฟล์สลิป (ไม่ใช่ JSON) |
 | 7.8 | GET | `/api/admin/payments` | admin | รายการรอตรวจ (`?status=pending_review`) |
 | 7.9 | GET | `/api/admin/payments/:id` | admin | รายละเอียดการชำระ + Order |
@@ -391,14 +391,14 @@ Middleware (SA): `requireAuth` → `requireRole(...)` → `requireActiveAccount(
 
 **7.5** `{ "addressId": 3 }` → `{ shippingAddress }` · Errors: `INVALID_STATE` (ชำระแล้ว)
 
-**7.6 POST `/api/orders/:id/pay`** multipart: `slip` (ไฟล์ .jpg/.png **บังคับ**), `slipReference`, `slipAmount`, `slipTransferredAt` (ไม่บังคับ)
+**7.6 POST `/api/orders/:id/pay`** multipart (ทุกช่องไม่บังคับ ตาม D-01): `slip` (ไฟล์ .jpg/.png), `slipReference`, `slipAmount`, `slipTransferredAt` (สามช่องหลังใช้เมื่อแนบไฟล์)
 
-- ไม่มีไฟล์ `slip` → `SLIP_REQUIRED` ก่อนหักเงิน
-- ใน transaction: lock order + wallet → Order ต้อง `pending_payment`, ยังไม่เลย `payment_due_at`, ไม่มี payment `pending_review`, มีที่อยู่จัดส่ง → `balance ≥ totalAmount` → หัก wallet + `wallet_transactions(payment)` → INSERT payments `pending_review` พร้อมข้อมูลสลิป (ล้มเหลวไฟล์สลิปถูกลบ)
+- ไม่แนบไฟล์ก็ชำระได้ → payment `pending_review` โดย `slip_*` เป็น `NULL` และ `slipUrl: null` แอดมินตรวจเหมือนกัน แนบสลิปภายหลังได้ที่ 7.7
+- ใน transaction: lock order + wallet → Order ต้อง `pending_payment`, ยังไม่เลย `payment_due_at`, ไม่มี payment `pending_review`, มีที่อยู่จัดส่ง → `balance ≥ totalAmount` → หัก wallet + `wallet_transactions(payment)` → INSERT payments `pending_review` พร้อมข้อมูลสลิปถ้ามี (ล้มเหลวไฟล์สลิปถูกลบ)
 - 201 → `{ paymentId, status: "pending_review", walletBalance, slipUrl }`
-- Errors: `SLIP_REQUIRED` (400), `VALIDATION_ERROR` (ข้อมูลสลิป), `INSUFFICIENT_BALANCE` (400, `details: { shortfall }`), `PAYMENT_EXPIRED` (409), `PAYMENT_ALREADY_SUBMITTED` (409 กดซ้ำ), `ADDRESS_REQUIRED` (400), `INVALID_STATE` (409)
+- Errors: `VALIDATION_ERROR` (ข้อมูลสลิป), `UPLOAD_INVALID_TYPE` (400), `INSUFFICIENT_BALANCE` (400, `details: { shortfall }`), `PAYMENT_EXPIRED` (409), `PAYMENT_ALREADY_SUBMITTED` (409 กดซ้ำ), `ADDRESS_REQUIRED` (400), `INVALID_STATE` (409)
 
-**7.7 POST `/api/payments/:id/slip`** แทนสลิปเดิมระหว่าง `pending_review` multipart เหมือน 7.6 (ไฟล์บังคับ) → `{ paymentId, slipUrl, slipUploadedAt }` · Errors: `SLIP_REQUIRED`, `VALIDATION_ERROR`, `INVALID_STATE` (409 ตรวจแล้ว), `NOT_FOUND` (ไม่ใช่ผู้จ่าย)
+**7.7 POST `/api/payments/:id/slip`** แนบสลิป (กรณีจ่ายโดยไม่แนบ) หรือแทนสลิปเดิมระหว่าง `pending_review` multipart เหมือน 7.6 แต่เรียก endpoint นี้ต้องมีไฟล์ → `{ paymentId, slipUrl, slipUploadedAt }` · Errors: `SLIP_REQUIRED`, `VALIDATION_ERROR`, `INVALID_STATE` (409 ตรวจแล้ว), `NOT_FOUND` (ไม่ใช่ผู้จ่าย)
 
 **7.7b GET `/api/payments/:id/slip`** ส่งไฟล์รูปตรง เฉพาะผู้จ่ายหรือแอดมิน (สลิปไม่เสิร์ฟเป็นไฟล์สาธารณะ) · `slipUrl` ในทุก response ชี้มาที่ path นี้ FE ต้องโหลดผ่าน `api.blob()` · Errors: `NOT_FOUND`
 
@@ -574,7 +574,7 @@ Middleware (SA): `requireAuth` → `requireRole(...)` → `requireActiveAccount(
 | `OUTBID`, `AUCTION_EXTENDED`, `AUCTION_ENDING_SOON` | auction | ผู้บิด / Watchlist | เว็บ + อีเมล |
 | `AUCTION_WON`, `AUCTION_LOST` | auction | ผู้ชนะ / ผู้แพ้ / ผู้ขาย | เว็บ + อีเมล |
 | `PAYMENT_DUE_SOON`, `PAYMENT_SUCCESS`, `FUNDS_RELEASED`, `REFUNDED` | finance | ผู้ซื้อ / ผู้ขาย | เว็บ + อีเมล |
-| `SHIPPED`, `SHIP_OVERDUE` | shipping | ผู้ซื้อ | เว็บ + อีเมล |
+| `SHIPPED`, `SHIP_OVERDUE`, `ORDER_COMPLETED` | shipping | ผู้ซื้อ | เว็บ + อีเมล |
 | `ORDER_PAID`, `SHIP_DUE_SOON`, `ORDER_CANCELLED` | shipping | ผู้ขาย | เว็บ + อีเมล |
 | `DISPUTE_OPENED` | shipping | ผู้ขาย, แอดมิน | เว็บ + อีเมล |
 | `DISPUTE_UPDATED` | shipping | ผู้ซื้อ, ผู้ขาย (9.5) | เว็บ + อีเมล |

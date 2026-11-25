@@ -117,11 +117,9 @@
   document.addEventListener('user:ready', (e) => {
     const u = e.detail;
     if (!u) { location.href = `/pages/login.html?next=${encodeURIComponent(location.pathname)}`; return; }
-    if (u.role !== 'super_admin') {
-      showAlert('หน้านี้สำหรับ Super Admin เท่านั้น');
-      $('form').hidden = true;
-      return;
-    }
+    // ไม่ใช่แอดมิน → หน้าแรก · แอดมินทั่วไป → Dashboard (หน้านี้เฉพาะ Super Admin, BE ตรวจซ้ำที่ 11.8–11.9)
+    if (u.role !== 'admin' && u.role !== 'super_admin') { location.href = '/'; return; }
+    if (u.role !== 'super_admin') { location.href = '/pages/admin/dashboard.html'; return; }
     $('revert').addEventListener('click', () => { Object.keys(inputs).forEach((k) => { inputs[k].value = saved[k]; }); showErrors({}); markDirty(); });
     $('form').addEventListener('submit', async (ev) => {
       ev.preventDefault();

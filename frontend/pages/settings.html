@@ -23,6 +23,7 @@
     .public-preview .name { font-size: 18px; font-weight: 700; }
     .public-preview .badges { display: flex; gap: 6px; flex-wrap: wrap; }
     .public-preview .bio { margin: 4px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+    .back-link { display: inline-block; margin-bottom: 8px; font-weight: 600; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -33,6 +34,7 @@
     <aside class="account-nav" id="account-nav"></aside>
 
     <section>
+      <a class="back-link" id="back-link" hidden></a>
       <h1 class="page-title">ตั้งค่า</h1>
       <div class="tabs" role="tablist" id="tabs">
         <button type="button" role="tab" data-tab="profile" aria-selected="true">โปรไฟล์</button>

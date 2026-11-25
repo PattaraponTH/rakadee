@@ -124,7 +124,7 @@
       }
 
       try {
-        const res = await api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`);
+        await api.post('/auth/email/verify', { token }); // 1.8
         loading.classList.add('hidden');
         showAlert('ยืนยันอีเมลสำเร็จ!', false);
         successBox.classList.remove('hidden');
@@ -139,7 +139,7 @@
       btnResend.disabled = true;
       btnResend.textContent = 'กำลังส่ง...';
       try {
-        await api.post('/auth/verify-email/resend');
+        await api.post('/auth/email/resend'); // 1.9
         showAlert('ระบบได้ส่งอีเมลยืนยันฉบับใหม่ไปให้แล้ว กรุณาตรวจสอบกล่องข้อความ', false);
       } catch (err) {
         showAlert(err.message || 'กรุณาเข้าสู่ระบบก่อนขอส่งอีเมลยืนยันใหม่');

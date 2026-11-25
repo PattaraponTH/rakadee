@@ -218,8 +218,8 @@
 
             <div class="form-group" style="margin-top: 14px;">
               <label for="reg-idcard">เลขประจำตัวประชาชน 13 หลัก <span class="required-star">*</span></label>
-              <input type="text" id="reg-idcard" class="input-figma" required placeholder="เลข 13 หลัก ไม่ต้องใส่ขีด" maxlength="13">
-              <span class="helper-text"></span>
+              <input type="text" id="reg-idcard" class="input-figma" required placeholder="เลข 13 หลัก ไม่ต้องใส่ขีด" maxlength="13" inputmode="numeric" autocomplete="off">
+              <span class="helper-text" id="reg-idcard-help">กรอกเลขจริงตามบัตรประชาชน ระบบตรวจหลักสุดท้ายของเลขบัตร เลขที่พิมพ์ขึ้นเองจะไม่ผ่าน (เก็บแบบเข้ารหัส แสดงแค่ 4 ตัวท้าย)</span>
             </div>
 
             <div style="margin-top: 24px;">
@@ -326,13 +326,34 @@
       return check === parseInt(id.charAt(12), 10);
     }
 
+    // บอกตรงๆ ว่าเลขบัตรผิดตรงไหน (ใช้ทั้งตอนพิมพ์ครบและตอนกดสมัคร)
+    function idCardProblem(id) {
+      if (!id) return 'กรุณากรอกเลขประจำตัวประชาชน';
+      if (/\D/.test(id)) return 'เลขประจำตัวประชาชนต้องเป็นตัวเลขเท่านั้น ไม่ต้องใส่ขีดหรือเว้นวรรค';
+      if (id.length !== 13) return `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้กรอก ${id.length} หลัก)`;
+      if (!validateThaiIdCard(id)) return 'เลขประจำตัวประชาชนไม่ถูกต้อง หลักสุดท้ายไม่ตรงกับเลขบัตรจริง กรุณาตรวจสอบเลขอีกครั้ง';
+      return null;
+    }
+
+    const idCardInput = document.getElementById('reg-idcard');
+    const idCardHelp = document.getElementById('reg-idcard-help');
+    const idCardHelpText = idCardHelp.textContent;
+    function showIdCardHint(force) {
+      const id = idCardInput.value.trim();
+      const problem = (force || id.length >= 13) ? idCardProblem(id) : (/\D/.test(id) ? idCardProblem(id) : null);
+      idCardHelp.textContent = problem || idCardHelpText;
+      idCardHelp.style.color = problem ? 'var(--color-danger)' : '';
+    }
+    idCardInput.addEventListener('input', () => showIdCardHint(false));
+    idCardInput.addEventListener('blur', () => { if (idCardInput.value.trim()) showIdCardHint(true); });
+
     // 2. ส่งฟอร์มสมัครสมาชิก
     registerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       hideAlert();
 
       const email = document.getElementById('reg-email').value.trim();
-      const username = document.getElementById('reg-username').value.trim();
+      const username = document.getElementById('reg-username').value.trim().toLowerCase(); // เก็บเป็นตัวพิมพ์เล็ก (a-z 0-9 _)
       const password = document.getElementById('reg-password').value;
       const fullName = document.getElementById('reg-fullname').value.trim();
       const phone = document.getElementById('reg-phone').value.trim();
@@ -342,8 +363,11 @@
       if (!acceptTermsCheck.checked) {
         return showAlert('กรุณาติ๊กยอมรับข้อกำหนดการใช้งานและนโยบาย PDPA');
       }
-      if (!/^[a-zA-Z0-9_]{4,30}$/.test(username)) {
+      if (!/^[a-z0-9_]{4,30}$/.test(username)) {
         return showAlert('ชื่อผู้ใช้ต้องมีความยาว 4-30 ตัวอักษร (a-z, 0-9, _)');
+      }
+      if (fullName.length < 2) {
+        return showAlert('กรุณากรอกชื่อ-นามสกุลจริง');
       }
       if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
         return showAlert('รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร และมีทั้งตัวพิมพ์ใหญ่ พิมพ์เล็ก และตัวเลข');
@@ -351,8 +375,11 @@
       if (!/^0\d{9}$/.test(phone)) {
         return showAlert('เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลักขึ้นต้นด้วย 0');
       }
-      if (!validateThaiIdCard(idCardNumber)) {
-        return showAlert('เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักเกณฑ์');
+      const idProblem = idCardProblem(idCardNumber);
+      if (idProblem) {
+        showIdCardHint(true);
+        idCardInput.focus();
+        return showAlert(idProblem);
       }
 
       btnSubmitReg.disabled = true;
@@ -419,7 +446,10 @@
           location.href = '/pages/wallet.html';
         }, 1500);
       } catch (err) {
-        showAlert(err.message || 'รหัส OTP ไม่ถูกต้องหรือหมดอายุ');
+        // OTP_INVALID ส่ง details.attemptsLeft มาด้วย (api-spec 1.3)
+        const left = err.details && Number.isInteger(err.details.attemptsLeft) ? err.details.attemptsLeft : null;
+        const msg = err.message || 'รหัส OTP ไม่ถูกต้องหรือหมดอายุ';
+        showAlert(left === null ? msg : left > 0 ? `${msg} (เหลืออีก ${left} ครั้ง)` : `${msg} ใช้ครบจำนวนครั้งแล้ว กรุณากดขอรหัส OTP ใหม่`);
         btnVerify.disabled = false;
         btnVerify.textContent = 'ยืนยันรหัส OTP และเปิดใช้งานบัญชี';
       }
@@ -481,6 +511,19 @@
         }
       }, 1000);
     }
+
+    // มาจากหน้า login (บัญชียังไม่ยืนยัน OTP): register.html?step=otp&userId=… → เปิดขั้นกรอก OTP เลย
+    (() => {
+      const q = new URLSearchParams(location.search);
+      const uid = Number(q.get('userId'));
+      if (q.get('step') !== 'otp' || !Number.isInteger(uid) || uid <= 0) return;
+      registeredUserId = uid;
+      document.getElementById('otp-phone-display').textContent = 'เบอร์ที่ใช้สมัคร';
+      document.getElementById('otp-countdown').textContent = '--:--';
+      stepRegister.classList.add('hidden');
+      stepOtp.classList.remove('hidden');
+      showAlert('บัญชีนี้ยังไม่ได้ยืนยัน OTP กรอกรหัสล่าสุดที่ได้รับ หรือกดขอรหัส OTP ใหม่', false);
+    })();
   </script>
 </body>
 </html>

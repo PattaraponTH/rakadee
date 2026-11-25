@@ -119,14 +119,24 @@ const TEMPLATES = {
   FUNDS_RELEASED: {
     group: 'finance',
     title: () => 'ได้รับเงินจากการขาย',
-    message: (d) => `คำสั่งซื้อ ${order(d)} โอนเงิน ${baht(d.amount)} เข้า Mock Wallet แล้ว (หักค่าธรรมเนียมแล้ว)`,
+    message: (d) => (Number(d.amount) > 0
+      ? `คำสั่งซื้อ ${order(d)} โอนเงิน ${baht(d.amount)} เข้า Mock Wallet แล้ว (หักค่าธรรมเนียมแล้ว)`
+      : `คำสั่งซื้อ ${order(d)} เสร็จสมบูรณ์ ยอดสุทธิ ฿0 เพราะค่าธรรมเนียมขั้นต่ำเท่ากับราคาขาย`),
     link: () => '/pages/wallet.html',
   },
+  // คืนเงิน: Escrow คืนเงิน (ข้อพิพาท / ไม่ส่งของ) หรือแอดมินปฏิเสธสลิป (paymentRejected + reason, canRepay, payDueAt)
   REFUNDED: {
     group: 'finance',
-    title: () => 'ได้รับเงินคืน',
-    message: (d) => `${baht(d.amount)} เข้า Mock Wallet${d.orderId ? ` (${order(d)})` : ''}`,
-    link: () => '/pages/wallet.html',
+    title: (d) => (d.paymentRejected ? 'การชำระเงินถูกปฏิเสธ' : 'ได้รับเงินคืน'),
+    message: (d) => {
+      if (!d.paymentRejected) return `${baht(d.amount)} เข้า Mock Wallet${d.orderId ? ` (${order(d)})` : ''}`;
+      const why = d.reason ? `: ${d.reason}` : '';
+      const next = d.canRepay
+        ? ` กรุณาชำระใหม่${d.payDueAt ? `ก่อน ${thaiTime(d.payDueAt)}` : 'ภายในเวลาที่เหลือ'} ไม่งั้นคำสั่งซื้อจะถูกยกเลิก`
+        : '';
+      return `การชำระ ${order(d)} ถูกปฏิเสธ${why} คืนเงิน ${baht(d.amount)} เข้า Mock Wallet แล้ว${next}`;
+    },
+    link: (d) => (d.paymentRejected && d.canRepay && d.orderId ? `/pages/payment.html?orderId=${d.orderId}` : '/pages/wallet.html'),
   },
   SHIPPED: {
     group: 'shipping',
@@ -150,6 +160,13 @@ const TEMPLATES = {
     group: 'shipping',
     title: () => 'ผู้ขายยังไม่จัดส่งตามกำหนด',
     message: (d) => `คำสั่งซื้อ ${order(d)} เลยกำหนดส่งแล้ว คุณขอยกเลิกและรับเงินคืนเต็มจำนวนได้`,
+    link: orderLink,
+  },
+  // ปล่อยเงินแล้ว (ยืนยันรับ / ปล่อยอัตโนมัติ 7 วัน / แอดมินตัดสินปล่อยเงิน) แจ้งผู้ซื้อ
+  ORDER_COMPLETED: {
+    group: 'shipping',
+    title: () => 'คำสั่งซื้อเสร็จสมบูรณ์',
+    message: (d) => `คำสั่งซื้อ ${order(d)} เสร็จสมบูรณ์ ระบบปล่อยเงินให้ผู้ขายแล้ว`,
     link: orderLink,
   },
   ORDER_CANCELLED: {

@@ -142,11 +142,12 @@
 
         <div id="balance-status-box" style="margin-top: 14px;"></div>
 
-        <!-- แนบสลิปการโอนเงิน (บังคับแนบสลิป, เลขอ้างอิงไม่บังคับ) -->
+        <!-- แนบสลิปการโอนเงิน (ไม่บังคับ ตาม D-01) -->
         <div id="pay-slip-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-border);">
-          <h3 style="font-size: 15px; margin: 0 0 12px;">แนบสลิปการโอนเงิน</h3>
+          <h3 style="font-size: 15px; margin: 0 0 4px;">แนบสลิปการโอนเงิน <span class="muted" style="font-weight: 400; font-size: 13px;">(ไม่บังคับ)</span></h3>
+          <p class="muted" style="font-size: 13px; margin: 0 0 12px;">ยอดใน Wallet พอก็กดยืนยันได้เลย ระบบจะหักเงินจาก Wallet แล้วส่งให้แอดมินตรวจ ถ้ามีสลิปจะแนบไว้เป็นหลักฐานเพิ่มก็ได้</p>
           <div class="form-group" style="margin-bottom: 12px;">
-            <label for="pay-slip-file" style="font-weight: 600; font-size: 13.5px;">ไฟล์รูปภาพสลิป (JPG, PNG) <span style="color: var(--color-danger);">* บังคับ</span></label>
+            <label for="pay-slip-file" style="font-weight: 600; font-size: 13.5px;">ไฟล์รูปภาพสลิป (JPG, PNG)</label>
             <input type="file" id="pay-slip-file" accept="image/jpeg,image/png" style="margin-top: 6px; width: 100%;">
           </div>
           <div class="form-group" style="margin-bottom: 12px;">
@@ -168,21 +169,21 @@
 
       <!-- สลิปการโอนเงิน (แสดงเมื่อมี payment pending_review) -->
       <div class="card hidden" id="slip-card">
-        <h2 style="font-size: 16px; margin: 0 0 12px;">หลักฐานสลิปการโอนเงิน</h2>
+        <h2 style="font-size: 16px; margin: 0 0 12px;">สลิปการโอนเงิน (ไม่บังคับ)</h2>
         <p class="muted" style="font-size: 13px; margin: 0 0 16px;">
-          คุณสามารถตรวจสอบสลิปที่ส่งแล้ว หรือเลือกอัปโหลดสลิปใหม่เพื่อให้แอดมินตรวจสอบได้
+          ระหว่างรอแอดมินตรวจ คุณแนบสลิปเพิ่มหรือเปลี่ยนสลิปที่ส่งไว้ได้
         </p>
 
         <form id="slip-form" enctype="multipart/form-data">
           <div class="form-group">
-            <label for="slip-file">อัปโหลดสลิปใหม่ (JPG, PNG) <span style="color: var(--color-danger);">*</span></label>
+            <label for="slip-file">เลือกไฟล์สลิป (JPG, PNG)</label>
             <input type="file" id="slip-file" name="slip" accept="image/jpeg,image/png" required>
           </div>
           <div class="form-group">
             <label for="slip-ref">เลขอ้างอิงสลิป (ไม่บังคับ)</label>
             <input type="text" id="slip-ref" name="slipReference" placeholder="เช่น 202611210001">
           </div>
-          <button type="submit" class="btn" id="btn-upload-slip">บันทึกสลิปใหม่</button>
+          <button type="submit" class="btn" id="btn-upload-slip">บันทึกสลิป</button>
         </form>
 
         <div id="slip-preview-box" class="hidden" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--color-border);">
@@ -235,6 +236,7 @@
 
     function renderTimer(remainingSec, isPaused = false) {
       const slot = document.getElementById('timer-slot');
+      clearInterval(timerInterval); // หยุดตัวนับเดิมก่อนเสมอ (หลังชำระแล้ว countdown ต้องไม่เดินต่อ)
       if (isPaused) {
         slot.innerHTML = `<span class="timer-badge timer-paused">⏸️ รอแอดมินตรวจ (หยุดนับเวลา)</span>`;
         return;
@@ -389,14 +391,10 @@
       }
     }
 
-    // กดชำระเงินด้วย Wallet พร้อมสลิป
+    // กดชำระเงินด้วย Wallet (สลิปไม่บังคับ)
     document.getElementById('btn-submit-pay').addEventListener('click', async () => {
       const fileInput = document.getElementById('pay-slip-file');
-      if (!fileInput.files || fileInput.files.length === 0) {
-        alert('กรุณาแนบรูปภาพสลิปการโอนเงิน');
-        fileInput.focus();
-        return;
-      }
+      const hasSlip = fileInput.files && fileInput.files.length > 0;
 
       if (!confirm(`ยืนยันการชำระเงินจำนวน ฿${formatNumber(orderData.totalAmount)} จาก Wallet ของคุณ?`)) return;
 
@@ -405,15 +403,16 @@
       btn.textContent = 'กำลังดำเนินการ...';
 
       try {
-        // ชำระและแนบสลิปในคำขอเดียว (สลิปบังคับ) ถ้าไม่สำเร็จจะไม่ถูกหักเงิน
+        // ชำระและแนบสลิป (ถ้ามี) ในคำขอเดียว ถ้าไม่สำเร็จจะไม่ถูกหักเงิน
         const fd = new FormData();
-        fd.append('slip', fileInput.files[0]);
+        if (hasSlip) fd.append('slip', fileInput.files[0]);
         const ref = document.getElementById('pay-slip-ref').value.trim();
         if (ref) fd.append('slipReference', ref);
 
         await api.upload(`/orders/${orderId}/pay`, fd);
 
-        showAlert('ชำระเงินและแนบสลิปเรียบร้อยแล้ว ขณะนี้อยู่ระหว่างรอแอดมินตรวจสอบ', false);
+        showAlert(hasSlip ? 'ชำระเงินและแนบสลิปเรียบร้อยแล้ว ขณะนี้อยู่ระหว่างรอแอดมินตรวจสอบ' : 'ชำระเงินเรียบร้อยแล้ว ขณะนี้อยู่ระหว่างรอแอดมินตรวจสอบ', false);
+        if (window.layout && window.layout.refreshWallet) window.layout.refreshWallet(); // ยอดบน navbar
         loadPaymentDetails();
       } catch (err) {
         showAlert(err.message || 'ชำระเงินไม่สำเร็จ');
@@ -453,7 +452,7 @@
         alert(err.message || 'อัปโหลดสลิปไม่สำเร็จ');
       } finally {
         btn.disabled = false;
-        btn.textContent = 'บันทึกสลิปใหม่';
+        btn.textContent = 'บันทึกสลิป';
       }
     });
 
@@ -468,7 +467,8 @@
         const addrs = await api.get('/users/me/addresses');
         const items = Array.isArray(addrs) ? addrs : addrs.items || [];
         if (items.length === 0) {
-          list.innerHTML = 'ไม่พบที่อยู่ในสมุดที่อยู่ของคุณ <a href="/pages/settings.html#addresses" target="_blank">เพิ่มที่อยู่ใหม่</a>';
+          const back = encodeURIComponent(location.pathname + location.search);
+          list.innerHTML = `ไม่พบที่อยู่ในสมุดที่อยู่ของคุณ <a href="/pages/settings.html?next=${back}#addresses">เพิ่มที่อยู่ใหม่</a>`;
           return;
         }
 

@@ -69,7 +69,7 @@ const ACCOUNT_ERRORS = {
 function tooLow(mode, minNext) {
   const code = mode === 'proxy' ? 'PROXY_TOO_LOW' : 'BID_TOO_LOW';
   const what = mode === 'proxy' ? 'วงเงิน Proxy ' : 'ราคาที่เสนอ';
-  return new AppError(400, code, `${what}ต้องไม่ต่ำกว่า ${formatBaht(minNext)} บาท`, { minNextBid: fromSatang(minNext) });
+  return new AppError(400, code, `${what}ต้องไม่ต่ำกว่า ${formatBaht(minNext)} บาท`, { minNextBid: Number(fromSatang(minNext)) });
 }
 
 // กฎข้อ 9 (D-14): วงเงินผู้นำถึง Reserve แล้วแต่ราคายังต่ำกว่า -> ดันราคาไปที่ Reserve
@@ -186,8 +186,13 @@ function decideBid({ listing: L, leaderProxy, user: U, amount: X, mode, now }) {
   let endAt = L.endAt;
   let extendCount = L.extendCount;
   let extended = false;
-  if (priceMoved && L.endAt - now <= time.autoExtendMs && L.extendCount < time.autoExtendMaxCount) {
-    endAt = now + time.autoExtendMs;
+  // เทียบเวลาที่เหลือเป็นวินาทีเต็ม (ปัดเวลาบิดขึ้นเป็นวินาที) ให้ตรงกับ end_at ที่เก็บถึงวินาที
+  // QA R2-3: หลังต่อเวลา end_at = เวลาบิด + 2:00 ปัดขึ้น จึงเหลือ 120–121 วินาที บิดภายใน 1 วินาทีแรกต้องต่อด้วย (2:00 พอดีก็นับ)
+  const nowSec = Math.ceil(now / 1000) * 1000;
+  if (priceMoved && L.endAt - nowSec <= time.autoExtendMs && L.extendCount < time.autoExtendMaxCount) {
+    // listings.end_at เก็บละเอียดถึงวินาที (MySQL ปัดมิลลิวินาทีขึ้น/ลง) จึงปัดขึ้นเป็นวินาทีเต็มเอง
+    // เวลาปิดใหม่ไม่น้อยกว่าเวลาบิด + 2 นาทีเสมอ และค่าที่เก็บตรงกับที่ส่งให้ client
+    endAt = Math.ceil((now + time.autoExtendMs) / 1000) * 1000;
     extendCount += 1;
     extended = true;
   }
@@ -351,31 +356,35 @@ async function placeBid({ listingId, user, amount, mode, ip = null, userAgent = 
       [fromSatang(r.price), r.leader, r.bids.length, new Date(r.endAt), r.extendCount, listingId],
     );
 
-    const last = r.bids[r.bids.length - 1] || null;
-    const names = await usernamesOf(conn, last ? [last.bidderId] : []);
+    const names = await usernamesOf(conn, r.bids.map((b) => b.bidderId)); // ทุกแถวที่ INSERT (ส่ง bid:new ทีละแถว)
     const [[myProxy]] = await conn.query(
       'SELECT max_amount, is_active FROM proxy_bids WHERE listing_id = ? AND bidder_id = ?',
       [listingId, user.id],
     );
-    return { r, row, now, last, lastName: last ? names.get(Number(last.bidderId)) : null, myProxy };
+    return { r, row, L, now, names, myProxy };
   });
 
   // ---------- หลัง COMMIT เท่านั้น ----------
-  const { r, row, now, last, lastName, myProxy } = out;
+  const { r, row, L, now, names, myProxy } = out;
   const bidCount = row.bid_count + r.bids.length;
-  if (last) {
-    emitToListing(listingId, 'bid:new', { // ห้ามส่ง user id ของผู้บิด (api-spec 12)
+  // QA RT-2: หนึ่งคำขออาจ INSERT หลายแถว (บิดของผู้ใช้ + Proxy ตอบกลับ) ส่ง bid:new ทุกแถวตามลำดับ
+  // แถวก่อนสุดท้าย: ราคาและบิดขั้นต่ำ ณ แถวนั้น แถวสุดท้าย: ค่าสุดท้ายของคำขอ (r.price, r.minNextBid)
+  // ห้ามส่ง user id ของผู้บิด (api-spec 12)
+  const serverTime = iso(Date.now());
+  r.bids.forEach((b, i) => {
+    const isLast = i === r.bids.length - 1;
+    emitToListing(listingId, 'bid:new', {
       listingId,
-      currentPrice: money(r.price),
-      minNextBid: money(r.minNextBid),
-      bidCount,
-      bidder: maskUsername(lastName),
-      amount: money(last.amount),
-      bidType: last.bidType === 'proxy' ? 'auto' : last.bidType, // D-16
+      currentPrice: money(isLast ? r.price : b.amount),
+      minNextBid: money(isLast ? r.minNextBid : minNextBid({ ...L, currentPrice: b.amount })),
+      bidCount: row.bid_count + i + 1,
+      bidder: maskUsername(names.get(Number(b.bidderId))),
+      amount: money(b.amount),
+      bidType: b.bidType === 'proxy' ? 'auto' : b.bidType, // D-16
       endAt: iso(r.endAt),
-      serverTime: iso(Date.now()),
+      serverTime,
     });
-  }
+  });
   if (r.leaderChanged) {
     emitToUser(r.leader, 'bid:leader', { listingId, isLeading: true, currentPrice: money(r.price) });
     if (r.prevLeader !== null) emitToUser(r.prevLeader, 'bid:leader', { listingId, isLeading: false, currentPrice: money(r.price) });

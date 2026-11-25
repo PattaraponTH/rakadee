@@ -338,8 +338,15 @@ async function recordShipment(viewer, orderId, body, file) {
       if (o.status === 'cancelled') throw new AppError(409, 'ORDER_CANCELLED', 'คำสั่งซื้อนี้ถูกยกเลิกแล้ว');
       if (o.status !== 'awaiting_shipment') throw invalidState(o, 'คำสั่งซื้อนี้ไม่อยู่ในสถานะรอจัดส่ง');
       if (await isDisputeOpen(orderId, conn)) throw new AppError(409, 'DISPUTE_OPEN', 'คำสั่งซื้อนี้มีข้อพิพาทเปิดอยู่');
-      if (o.paid_at && input.shippedAt < new Date(o.paid_at)) {
-        throw validationError({ shippedAt: 'วันเวลาที่ส่งต้องไม่ก่อนวันที่ชำระเงินสำเร็จ' });
+      if (o.paid_at) {
+        // ช่องเวลาในฟอร์มละเอียดถึงนาที (ไม่มีวินาที) จึงเทียบระดับนาที: นาทีเดียวกับที่ชำระสำเร็จถือว่าใช้ได้
+        // และเก็บเป็นเวลาชำระแทน เพื่อไม่ให้เวลาส่งในไทม์ไลน์ขึ้นก่อนเวลาชำระ
+        const paidAt = new Date(o.paid_at);
+        const paidMinute = Math.floor(paidAt.getTime() / 60000) * 60000;
+        if (input.shippedAt.getTime() < paidMinute) {
+          throw validationError({ shippedAt: 'วันเวลาที่ส่งต้องไม่ก่อนวันที่ชำระเงินสำเร็จ' });
+        }
+        if (input.shippedAt < paidAt) input.shippedAt = paidAt;
       }
 
       await conn.query(

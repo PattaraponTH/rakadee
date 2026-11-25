@@ -419,6 +419,16 @@
     }
   }
 
+  // มาจากหน้าอื่น (?next=) เช่น หน้าชำระเงินกด "เพิ่มที่อยู่ใหม่" → มีลิงก์กลับ (รับเฉพาะ path ในเว็บนี้)
+  function renderBackLink() {
+    const next = new URLSearchParams(location.search).get('next') || '';
+    if (!/^\/(?![\/\\])/.test(next)) return;
+    const a = $('back-link');
+    a.href = next;
+    a.textContent = next.startsWith('/pages/payment.html') ? '← กลับไปหน้าชำระเงิน' : '← กลับไปหน้าก่อนหน้า';
+    a.hidden = false;
+  }
+
   // ---------------------------------------------------------------- init
   document.addEventListener('user:ready', (e) => {
     me = e.detail;
@@ -426,6 +436,7 @@
     if (!isMember(me)) document.querySelectorAll('[data-member]').forEach((b) => b.remove());
 
     renderProfile();
+    renderBackLink();
     $('tabs').addEventListener('click', (ev) => {
       const b = ev.target.closest('button[data-tab]');
       if (b) openTab(b.dataset.tab);

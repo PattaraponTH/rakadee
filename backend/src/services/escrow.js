@@ -115,7 +115,9 @@ async function release(orderId, existingConn = null) {
 
     // 4. คำนวณค่าธรรมเนียมแพลตฟอร์ม: คิดจาก item_price เท่านั้น (D-10)
     const feeAmount = calculatePlatformFee(itemPrice, await settings.feeConfig()); // ค่าตั้ง ณ เวลาปล่อยเงิน
-    const netSellerAmount = totalAmount - feeAmount;
+    // คิดเป็นสตางค์ (จำนวนเต็ม) ตาม AGENTS.md ไม่ลบ float ตรงๆ
+    const netSatang = Math.round(totalAmount * 100) - Math.round(feeAmount * 100);
+    const netSellerAmount = netSatang / 100;
 
     // 5. โอนเงินสุทธิเข้า Wallet ของผู้ขาย
     const [sellerWallets] = await conn.query(
@@ -127,21 +129,24 @@ async function release(orderId, existingConn = null) {
     }
 
     const sellerWallet = sellerWallets[0];
-    const balanceBefore = Number(sellerWallet.balance);
-    const balanceAfter = balanceBefore + netSellerAmount;
+    const balanceAfter = (Math.round(Number(sellerWallet.balance) * 100) + netSatang) / 100;
 
-    await conn.query(
-      'UPDATE wallets SET balance = ? WHERE id = ?',
-      [balanceAfter, sellerWallet.id]
-    );
+    // ยอดสุทธิ 0 บาท (เช่น ราคาปิด ≤ ค่าธรรมเนียมขั้นต่ำ และไม่มีค่าส่ง) ไม่มีเงินเข้า Wallet
+    // จึงไม่บันทึก ledger (wallet_transactions.amount ห้ามเป็น 0 ตาม CHECK ใน schema) แต่ยังปล่อย Escrow ตามปกติ
+    if (netSatang > 0) {
+      await conn.query(
+        'UPDATE wallets SET balance = ? WHERE id = ?',
+        [balanceAfter, sellerWallet.id]
+      );
 
-    // 6. บันทึกธุรกรรม ledger (wallet_transactions)
-    await conn.query(
-      `INSERT INTO wallet_transactions
-        (wallet_id, type, amount, balance_after, reference_type, reference_id, note)
-       VALUES (?, 'sale_proceeds', ?, ?, 'order', ?, ?)`,
-      [sellerWallet.id, netSellerAmount, balanceAfter, orderId, `รายได้จากคำสั่งซื้อ #${orderId} (หักค่าธรรมเนียม ${feeAmount} บาท)`]
-    );
+      // 6. บันทึกธุรกรรม ledger (wallet_transactions)
+      await conn.query(
+        `INSERT INTO wallet_transactions
+          (wallet_id, type, amount, balance_after, reference_type, reference_id, note)
+         VALUES (?, 'sale_proceeds', ?, ?, 'order', ?, ?)`,
+        [sellerWallet.id, netSellerAmount, balanceAfter, orderId, `รายได้จากคำสั่งซื้อ #ORD-${orderId} (หักค่าธรรมเนียม ${feeAmount} บาท)`]
+      );
+    }
 
     // 7. อัปเดตสถานะ Escrow เป็น 'released'
     await conn.query(
@@ -166,11 +171,7 @@ async function release(orderId, existingConn = null) {
 
     // แจ้งเตือนผู้ซื้อ (คำสั่งซื้อเสร็จสมบูรณ์) — notify ทั้งสองฝั่งตาม requirement
     if (order.buyer_id) {
-      notify(order.buyer_id, EVENTS.PAYMENT_SUCCESS, {
-        orderId,
-        title: 'คำสั่งซื้อเสร็จสมบูรณ์',
-        message: `คำสั่งซื้อ #${orderId} เสร็จสมบูรณ์แล้ว ระบบได้ปล่อยเงินให้ผู้ขายเรียบร้อย`,
-      }).catch(() => {});
+      notify(order.buyer_id, EVENTS.ORDER_COMPLETED, { orderId }).catch(() => {});
     }
 
     return {

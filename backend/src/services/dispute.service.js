@@ -125,7 +125,8 @@ async function insertEvidence(conn, disputeId, userId, party, files, note) {
 // ----------------------------------------------------------------
 // โหลดข้อพิพาท + ตรวจสิทธิ์ (ผู้ซื้อ / ผู้ขายของ Order / แอดมิน)
 // ----------------------------------------------------------------
-async function loadDisputeForViewer(disputeId, user) {
+// forWrite: คนนอกที่พยายามเขียน (ส่งหลักฐาน 9.3) ได้ 403 แบบเดียวกับเปิดข้อพิพาท 9.1 · การอ่าน (9.2 / 9.7) ยังได้ 404 ไม่บอกว่ามีข้อพิพาทนี้
+async function loadDisputeForViewer(disputeId, user, { forWrite = false } = {}) {
   const [[row]] = await db.pool.query(
     `SELECT d.*, o.buyer_id, o.seller_id
        FROM disputes d JOIN orders o ON o.id = d.order_id
@@ -135,7 +136,10 @@ async function loadDisputeForViewer(disputeId, user) {
   if (!row) throw new AppError(404, 'NOT_FOUND', 'ไม่พบข้อพิพาท');
   const isAdmin = ['admin', 'super_admin'].includes(user.role);
   const party = Number(row.buyer_id) === user.id ? 'buyer' : Number(row.seller_id) === user.id ? 'seller' : null;
-  if (!isAdmin && !party) throw new AppError(404, 'NOT_FOUND', 'ไม่พบข้อพิพาท');
+  if (!isAdmin && !party) {
+    if (forWrite) throw new AppError(403, 'FORBIDDEN', 'เฉพาะผู้ซื้อหรือผู้ขายของคำสั่งซื้อนี้เท่านั้น');
+    throw new AppError(404, 'NOT_FOUND', 'ไม่พบข้อพิพาท');
+  }
   return { row, party, isAdmin };
 }
 
@@ -243,7 +247,7 @@ async function getEvidenceFile(disputeId, evidenceId, user) {
 
 async function addEvidence(disputeId, user, body, files = []) {
   try {
-    const { party } = await loadDisputeForViewer(disputeId, user);
+    const { party } = await loadDisputeForViewer(disputeId, user, { forWrite: true });
     if (!party) throw new AppError(403, 'FORBIDDEN', 'เฉพาะผู้ซื้อหรือผู้ขายของคำสั่งซื้อนี้เท่านั้น');
     if (!files.length) throw new AppError(400, 'VALIDATION_ERROR', 'กรุณาแนบรูปหลักฐานอย่างน้อย 1 รูป', { files: 'ต้องมีอย่างน้อย 1 รูป' });
     if (files.length > MAX_FILES) throw new AppError(400, 'VALIDATION_ERROR', `แนบได้ไม่เกิน ${MAX_FILES} รูปต่อครั้ง`, { files: `ไม่เกิน ${MAX_FILES} รูป` });

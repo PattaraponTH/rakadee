@@ -6,6 +6,8 @@ const { notFound, errorHandler } = require('./middlewares/errorHandler');
 
 const app = express();
 
+// กันเบราว์เซอร์เดาชนิดไฟล์เอง (ไฟล์ที่เสิร์ฟเป็นรูปจะไม่ถูกตีความเป็น HTML / สคริปต์)
+app.use((req, res, next) => { res.setHeader('X-Content-Type-Options', 'nosniff'); next(); });
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 

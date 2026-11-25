@@ -6,6 +6,7 @@
 //   window.getSocket()                         Socket.IO ที่เชื่อมแล้ว (ส่ง token ให้อัตโนมัติ) ใช้ร่วมกันทั้งหน้า
 //   document 'notification:new' (e.detail)     ยิงเมื่อมีแจ้งเตือนใหม่แบบ real-time
 //   window.layout.setUnread(n)                 ตั้งตัวเลขบนกระดิ่ง
+//   window.layout.refreshWallet()              โหลดยอด Wallet บน navbar ใหม่ (หลังชำระเงิน ฯลฯ)
 (() => {
   const ICON = {
     bell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
@@ -86,6 +87,7 @@
 
   // ---------------------------------------------------------------- Navbar
   let unreadBadge = null;
+  let refreshWallet = () => Promise.resolve(); // ตั้งค่าจริงตอนสร้าง navbar ของสมาชิก
   function setUnread(n) {
     if (window.adminShell) window.adminShell.setUnread(n);
     if (!unreadBadge) return;
@@ -317,9 +319,10 @@
           const wallet = link('/pages/wallet.html', '', 'nav-wallet');
           wallet.hidden = true;
           actions.appendChild(wallet);
-          api.get('/wallet')
+          refreshWallet = () => api.get('/wallet')
             .then((w) => { wallet.textContent = `฿${Number(w.balance).toLocaleString('th-TH')}`; wallet.hidden = false; })
-            .catch(() => { /* Wallet API (SA) ยังไม่พร้อม ก็ซ่อนไว้ */ });
+            .catch(() => { /* โหลดยอดไม่ได้ก็ซ่อนไว้ */ });
+          refreshWallet();
         }
         actions.appendChild(buildUserMenu(user));
       } else {
@@ -346,6 +349,7 @@
     }
   }
 
-  window.layout = { setUnread, toast };
+  // หน้าอื่นเรียก window.layout.refreshWallet() หลังทำรายการที่ยอด Wallet เปลี่ยน (เช่น ชำระเงิน)
+  window.layout = { setUnread, toast, refreshWallet: () => refreshWallet() };
   document.addEventListener('DOMContentLoaded', renderNavbar);
 })();

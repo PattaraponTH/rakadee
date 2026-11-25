@@ -38,7 +38,8 @@ async function loadAddresses() {
     fillSelect(sel, items, (a) => el('option', { value: a.id, text: addressText(a) + (a.isDefault ? ' (ค่าเริ่มต้น)' : '') }));
     if (!items.length) {
       $('address-hint').replaceChildren('ยังไม่มีที่อยู่ในสมุดที่อยู่ ',
-        el('a', { href: '/pages/settings.html#addresses', text: 'เพิ่มที่อยู่ก่อน' }));
+        // ?next= ให้หน้าตั้งค่ามีลิงก์กลับมาหน้าเปิดร้าน (แบบเดียวกับหน้าชำระเงิน)
+        el('a', { href: `/pages/settings.html?next=${encodeURIComponent(location.pathname)}#addresses`, text: 'เพิ่มที่อยู่ก่อน' }));
     } else if (!sel.value) {
       const def = items.find((a) => a.isDefault);
       if (def) sel.value = def.id;

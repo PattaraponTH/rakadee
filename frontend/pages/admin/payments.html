@@ -309,10 +309,9 @@
     });
 
     function checkUserAndLoad(user) {
-      if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
-        location.href = '/pages/login.html';
-        return;
-      }
+      // ยังไม่ login → หน้า login (กลับมาหน้านี้ได้) · login แล้วแต่ไม่ใช่แอดมิน → หน้าแรก (เหมือน dashboard)
+      if (!user) { location.href = `/pages/login.html?next=${encodeURIComponent(location.pathname)}`; return; }
+      if (user.role !== 'admin' && user.role !== 'super_admin') { location.href = '/'; return; }
       loadPayments(1);
     }
 

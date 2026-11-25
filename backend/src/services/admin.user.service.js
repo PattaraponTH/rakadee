@@ -16,6 +16,8 @@ const money = (v) => (v === null || v === undefined ? null : Number(v));
 const ADMIN_ROLES = ['admin', 'super_admin'];
 const USER_STATUSES = ['pending_verification', 'active', 'restricted', 'suspended', 'banned'];
 const USER_ROLES = ['bidder', 'seller', 'admin', 'super_admin'];
+// 10.1 ส่งเบอร์แบบปิดบางส่วน (api-spec 10.1) รูปแบบเดียวกับหน้า admin/users.js · หน้าโปรไฟล์ 10.2 ยังส่งเบอร์เต็ม
+const maskPhone = (p) => (p && p.length === 10 ? `${p.slice(0, 3)}-***-${p.slice(6)}` : p);
 
 // ตรวจว่าแอดมินคนนี้แก้ไขบัญชีเป้าหมายได้หรือไม่
 function assertCanModify(actor, target) {
@@ -69,7 +71,7 @@ async function listUsers({ q, status, role, page, limit }) {
       fullName: r.full_name,         // เพิ่มจาก spec 10.1 สำหรับคอลัมน์ "ชื่อ" (รอ SA เพิ่มใน api-spec)
       displayName: r.display_name,
       email: r.email,
-      phone: r.phone,
+      phone: maskPhone(r.phone),
       idCardLast4: r.id_card_last4,  // เพิ่มจาก spec 10.1 สำหรับคอลัมน์ "บัตร ปชช." (4 ตัวท้ายเท่านั้น ตาม 0.5)
       role: r.role,
       status: r.status,

@@ -9,7 +9,8 @@
     "dev": "node --watch src/server.js",
     "test": "node --test tests/**/*.test.js",
     "db:init": "node scripts/db-init.js",
-    "dev:token": "node scripts/dev-token.js"
+    "dev:token": "node scripts/dev-token.js",
+    "db:demo": "node scripts/db-init.js && node scripts/demo-seed.js"
   },
   "engines": {
     "node": ">=20"
